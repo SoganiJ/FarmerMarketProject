@@ -27,10 +27,16 @@ const LOW_STOCK_THRESHOLD = 10; // products with less than 10 items are consider
 
 // === MIDDLEWARE ===
 app.use(cors({
-    origin: ["http://localhost:5173", "http://127.0.0.1:5173","https://farmer-market-project-ocrbwa68v.vercel.app"],
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"], // PATCH is also needed for stock/status updates
-    credentials: true
+  origin: [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://farmer-market-project.vercel.app", // ✅ your live frontend
+    "https://farmermarketproject.onrender.com" // ✅ backend itself
+  ],
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+  credentials: true
 }));
+
 app.use(express.json()); // Allows the server to read JSON data
 
 // Serve static files (uploaded images) from the 'uploads' directory
