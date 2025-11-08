@@ -7,8 +7,9 @@ import EditProfile from './components/EditProfile';
 import ProductList from './components/ProductList';
 import FarmerDashboard from './components/FarmerDashboard';
 import UserDashboard from './components/UserDashboard';
-import Orders from './components/Orders';
+//import Orders from './components/Orders';
 import Cart from './components/Cart';
+import OrderSuccess from './components/OrderSuccess'; // Add this import
 
 function decodeToken(token) {
   try {
@@ -21,9 +22,10 @@ function decodeToken(token) {
 
 function App() {
   const [auth, setAuth] = useState(null);
-  const [currentView, setCurrentView] = useState('login');
+  const [currentView, setCurrentView] = useState('products');
   const [cart, setCart] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [orderSuccessData, setOrderSuccessData] = useState(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -106,13 +108,19 @@ function App() {
     setCart([]);
   };
 
-  const setView = (view) => {
+  const setView = (view, data = null) => {
+    if (view === 'orderSuccess') {
+      setOrderSuccessData(data);
+    }
+    
     if (view === 'login' && !auth) {
       setCurrentView('login');
     } else if (view === 'cart') {
       setCurrentView('cart');
     } else if (view === 'orders') {
       setCurrentView('orders');
+    } else if (view === 'orderSuccess') {
+      setCurrentView('orderSuccess');
     } else if (auth && view === 'profile') {
       setCurrentView('profile');
     } else if (auth && view === 'farmerDashboard' && auth.userType === 'farmer') {
@@ -150,7 +158,7 @@ function App() {
         setAuth={setAuth} 
         setView={setView} 
         onLogout={handleLogout}
-        cartCount={cart.reduce((total, item) => total + item.quantity, 0)}
+        cart={cart}
       />
       
       <main className="container" style={styles.mainContainer}>
@@ -167,7 +175,7 @@ function App() {
         )}
         
         {auth && currentView === 'userDashboard' && (
-          <UserDashboard auth={auth} />
+          <UserDashboard auth={auth} setView={setView} />
         )}
         
         {currentView === 'cart' && (
@@ -183,6 +191,15 @@ function App() {
         
         {currentView === 'orders' && (
           <Orders auth={auth} />
+        )}
+
+        {currentView === 'orderSuccess' && (
+          <OrderSuccess 
+            orderId={orderSuccessData?.orderId || 'N/A'}
+            totalAmount={orderSuccessData?.totalAmount || '0.00'}
+            setView={setView}
+            auth={auth}
+          />
         )}
         
         {auth && auth.userType === 'farmer' && currentView === 'products' && (

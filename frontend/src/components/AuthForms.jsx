@@ -39,21 +39,55 @@ function AuthForms({ onLoginSuccess }) {
   };
 
   const validateForm = () => {
+    // General validations for both login and signup
+    if (!formData.email.trim()) {
+        setMessage({ text: "Email is required.", type: 'error' });
+        return false;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+        setMessage({ text: "Please enter a valid email address.", type: 'error' });
+        return false;
+    }
+
+    if (!formData.password) {
+        setMessage({ text: "Password is required.", type: 'error' });
+        return false;
+    }
+
+    // Registration specific validations
     if (!isLogin) {
-      if (formData.password !== formData.confirmPassword) {
-        setMessage({ text: "Passwords don't match", type: 'error' });
-        return false;
-      }
-      
-      if (formData.password.length < 6) {
-        setMessage({ text: "Password must be at least 6 characters", type: 'error' });
-        return false;
-      }
-      
-      if (!formData.first_name || !formData.last_name) {
-        setMessage({ text: "First name and last name are required", type: 'error' });
-        return false;
-      }
+        if (!formData.username.trim()) {
+            setMessage({ text: 'Username is required.', type: 'error' });
+            return false;
+        }
+
+        if (!formData.first_name.trim() || !formData.last_name.trim()) {
+            setMessage({ text: "First name and last name are required.", type: 'error' });
+            return false;
+        }
+
+        // Name validation (no numbers or special characters)
+        const nameRegex = /^[A-Za-z]+$/;
+        if (!nameRegex.test(formData.first_name) || !nameRegex.test(formData.last_name)) {
+            setMessage({ text: "Names should only contain letters.", type: 'error' });
+            return false;
+        }
+        
+        // Password strength validation
+        const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+        if (!passwordRegex.test(formData.password)) {
+             setMessage({ 
+                 text: "Password must be at least 8 characters long and contain an uppercase letter, a lowercase letter, and a number.", 
+                 type: 'error' 
+                });
+             return false;
+        }
+
+        if (formData.password !== formData.confirmPassword) {
+            setMessage({ text: "Passwords do not match.", type: 'error' });
+            return false;
+        }
     }
     
     return true;
@@ -187,7 +221,8 @@ function AuthForms({ onLoginSuccess }) {
       padding: '0.75rem',
       borderRadius: '5px',
       marginTop: '1rem',
-      textAlign: 'center'
+      textAlign: 'center',
+      lineHeight: '1.4'
     },
     success: {
       backgroundColor: '#d4edda',
