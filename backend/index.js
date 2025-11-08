@@ -23,7 +23,7 @@ function generateOrderId() {
 }
 
 // === STOCK MANAGEMENT CONSTANTS ===
-const LOW_STOCK_THRESHOLD = 10; // Products with less than 10 items are considered low stock
+const LOW_STOCK_THRESHOLD = 10; // products with less than 10 items are considered low stock
 
 // === MIDDLEWARE ===
 app.use(cors({
@@ -100,61 +100,40 @@ function getStockStatus(stockQuantity) {
         return 'in_stock';
     }
 }
+
 async function updateProductStockStatus(productId) {
+    const client = await pool.connect();
     try {
+        await client.query('BEGIN');
+        
         // Get current stock quantity
-        const [productRows] = await pool.query(
-            "SELECT stock_quantity FROM Products WHERE product_id = ?",
+        const productResult = await client.query(
+            "SELECT stock_quantity FROM products WHERE product_id = $1",
             [productId]
         );
         
-        if (productRows.length === 0) {
+        if (productResult.rows.length === 0) {
             throw new Error("Product not found");
         }
 
-        const stockQuantity = Math.max(0, productRows[0].stock_quantity); // Ensure non-negative
+        const stockQuantity = Math.max(0, productResult.rows[0].stock_quantity); // Ensure non-negative
         const stockStatus = getStockStatus(stockQuantity);
 
         // Update stock status and ensure non-negative quantity
-        await pool.query(
-            "UPDATE Products SET stock_status = ?, stock_quantity = ? WHERE product_id = ?",
+        await client.query(
+            "UPDATE products SET stock_status = $1, stock_quantity = $2 WHERE product_id = $3",
             [stockStatus, stockQuantity, productId]
         );
 
+        await client.query('COMMIT');
         return stockStatus;
     } catch (err) {
+        await client.query('ROLLBACK');
         console.error("Error updating stock status:", err);
         throw err;
+    } finally {
+        client.release();
     }
-}
-function updateProductStockStatus(productId) {
-    return new Promise(async (resolve, reject) => {
-        try {
-            // Get current stock quantity
-            const [productRows] = await pool.query(
-                "SELECT stock_quantity FROM Products WHERE product_id = ?",
-                [productId]
-            );
-            
-            if (productRows.length === 0) {
-                reject(new Error("Product not found"));
-                return;
-            }
-
-            const stockQuantity = productRows[0].stock_quantity;
-            const stockStatus = getStockStatus(stockQuantity);
-
-            // Update stock status
-            await pool.query(
-                "UPDATE Products SET stock_status = ? WHERE product_id = ?",
-                [stockStatus, productId]
-            );
-
-            resolve(stockStatus);
-        } catch (err) {
-            reject(err);
-        }
-    });
 }
 
 // ===================================
@@ -178,10 +157,12 @@ app.post("/api/register", async (req, res) => {
             return res.status(400).json({ message: "All required fields must be filled." });
         }
 
-        const { rows: existingUser } = await pool.query(
-  "SELECT * FROM users WHERE email = $1 OR username = $2",
-  [email, username]
-);        if (existingUser.length > 0) {
+        const existingUserResult = await pool.query(
+            "SELECT * FROM users WHERE email = $1 OR username = $2",
+            [email, username]
+        );
+        
+        if (existingUserResult.rows.length > 0) {
             return res.status(409).json({ message: "Email or username already in use." });
         }
 
@@ -189,11 +170,11 @@ app.post("/api/register", async (req, res) => {
         const passwordHash = await bcrypt.hash(password, saltRounds);
 
         const query = `
-  INSERT INTO users (username, email, password_hash, user_type, first_name, last_name, address)
-  VALUES ($1, $2, $3, $4, $5, $6, $7)
-  RETURNING user_id
-`;
-        const [result] = await pool.query(query, [
+            INSERT INTO users (username, email, password_hash, user_type, first_name, last_name, address)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING user_id
+        `;
+        const result = await pool.query(query, [
             username,
             email,
             passwordHash,
@@ -203,7 +184,7 @@ app.post("/api/register", async (req, res) => {
             address || null
         ]);
 
-        const newUserId = result.insertId;
+        const newUserId = result.rows[0].user_id;
 
         if (!JWT_SECRET) {
              console.error("FATAL ERROR: JWT_SECRET is not defined.");
@@ -232,14 +213,6 @@ app.post("/api/register", async (req, res) => {
 
     } catch (err) {
         console.error("Registration Error:", err);
-
-        if (err.code === 'WARN_DATA_TRUNCATED' || err.errno === 1265) {
-             return res.status(400).json({ message: "Data is too long for a database field (check user_type)." });
-        }
-        if (err.code === 'ER_NO_DEFAULT_FOR_FIELD' || err.errno === 1364) {
-            return res.status(400).json({ message: `A required database field is missing.` });
-        }
-
         res.status(500).json({ message: "Server error during registration." });
     }
 });
@@ -254,12 +227,12 @@ app.post("/api/login", async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        const [users] = await pool.query("SELECT * FROM Users WHERE email = ?", [email]);
-        if (users.length === 0) {
+        const result = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
+        if (result.rows.length === 0) {
             return res.status(401).json({ message: "Invalid email or password" });
         }
 
-        const user = users[0];
+        const user = result.rows[0];
 
         if (!user.password_hash) {
              console.error(`User ${email} has no password hash in DB.`);
@@ -315,29 +288,34 @@ app.get("/api/products", async (req, res) => {
                 u.first_name,
                 u.last_name,
                 u.username
-            FROM Products p 
-            JOIN Users u ON p.farmer_id = u.user_id 
-            WHERE p.is_active = 1
+            FROM products p 
+            JOIN users u ON p.farmer_id = u.user_id 
+            WHERE p.is_active = true
         `;
         
         const params = [];
+        let paramCount = 0;
         
         // Add category filter
         if (category && category !== 'all') {
-            query += ` AND p.category = ?`;
+            paramCount++;
+            query += ` AND p.category = $${paramCount}`;
             params.push(category);
         }
         
         // Add search filter
         if (search && search.trim() !== '') {
-            query += ` AND (p.product_name LIKE ? OR p.description LIKE ?)`;
+            paramCount++;
             const searchTerm = `%${search}%`;
+            query += ` AND (p.product_name LIKE $${paramCount} OR p.description LIKE $${paramCount + 1})`;
             params.push(searchTerm, searchTerm);
+            paramCount++;
         }
 
         // Add stock status filter
         if (stock_status && stock_status !== 'all') {
-            query += ` AND p.stock_status = ?`;
+            paramCount++;
+            query += ` AND p.stock_status = $${paramCount}`;
             params.push(stock_status);
         }
         
@@ -361,9 +339,9 @@ app.get("/api/products", async (req, res) => {
                 break;
         }
         
-        const [rows] = await pool.query(query, params);
+        const result = await pool.query(query, params);
 
-        const productsWithFullImagePaths = rows.map(product => {
+        const productsWithFullImagePaths = result.rows.map(product => {
             if (product.image_url && !product.image_url.startsWith('http')) {
                 return {
                     ...product,
@@ -400,7 +378,7 @@ app.post("/api/products", verifyToken, upload.single("image"), async (req, res) 
     const stock_status = getStockStatus(safeStockQuantity);
 
     try {
-        const query = `INSERT INTO Products (product_name, description, price, stock_quantity, stock_status, farmer_id, category, image_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`;
+        const query = `INSERT INTO products (product_name, description, price, stock_quantity, stock_status, farmer_id, category, image_url, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`;
 
         await pool.query(query, [
             product_name,
@@ -426,14 +404,14 @@ app.get("/api/profile", verifyToken, async (req, res) => {
     const { userId } = req.user;
 
     try {
-        const query = "SELECT user_id, username, email, first_name, last_name, address, user_type FROM Users WHERE user_id = ?";
-        const [users] = await pool.query(query, [userId]);
+        const query = "SELECT user_id, username, email, first_name, last_name, address, user_type FROM users WHERE user_id = $1";
+        const result = await pool.query(query, [userId]);
 
-        if (users.length === 0) {
+        if (result.rows.length === 0) {
             return res.status(404).json({ message: "User not found." });
         }
 
-        res.json(users[0]);
+        res.json(result.rows[0]);
     } catch (err) {
         console.error("Get Profile Error:", err);
         res.status(500).json({ message: "Server error fetching profile." });
@@ -451,9 +429,9 @@ app.put("/api/profile", verifyToken, async (req, res) => {
 
     try {
         const query = `
-            UPDATE Users 
-            SET first_name = ?, last_name = ?, address = ?
-            WHERE user_id = ?
+            UPDATE users 
+            SET first_name = $1, last_name = $2, address = $3
+            WHERE user_id = $4
         `;
         await pool.query(query, [first_name, last_name, address, userId]);
 
@@ -481,7 +459,6 @@ app.get("/api/categories", async (req, res) => {
   }
 });
 
-
 // =======================================================
 // === FARMER-SPECIFIC API ENDPOINTS ===
 // =======================================================
@@ -495,12 +472,12 @@ app.get("/api/farmer/products", verifyToken, async (req, res) => {
     }
 
     try {
-        const query = `SELECT p.*, COALESCE(SUM(oi.quantity), 0) as total_sold FROM Products p LEFT JOIN Order_Items oi ON p.product_id = oi.product_id WHERE p.farmer_id = ? GROUP BY p.product_id ORDER BY p.created_at DESC`;
+        const query = `SELECT p.*, COALESCE(SUM(oi.quantity), 0) as total_sold FROM products p LEFT JOIN order_items oi ON p.product_id = oi.product_id WHERE p.farmer_id = $1 GROUP BY p.product_id ORDER BY p.created_at DESC`;
         
-        const [products] = await pool.query(query, [userId]);
+        const result = await pool.query(query, [userId]);
 
         // Add full URL for images
-        const productsWithFullImagePaths = products.map(product => {
+        const productsWithFullImagePaths = result.rows.map(product => {
             if (product.image_url) {
                 return {
                     ...product,
@@ -527,8 +504,8 @@ app.get("/api/farmer/sales", verifyToken, async (req, res) => {
 
     try {
         // Use price_at_purchase instead of unit_price
-        const revenueQuery = `SELECT COALESCE(SUM(oi.quantity * oi.price_at_purchase), 0) as totalRevenue FROM Order_Items oi JOIN Products p ON oi.product_id = p.product_id WHERE p.farmer_id = ?`;
-        const [revenueResult] = await pool.query(revenueQuery, [userId]);
+        const revenueQuery = `SELECT COALESCE(SUM(oi.quantity * oi.price_at_purchase), 0) as totalRevenue FROM order_items oi JOIN products p ON oi.product_id = p.product_id WHERE p.farmer_id = $1`;
+        const revenueResult = await pool.query(revenueQuery, [userId]);
 
         // Get best selling product with revenue data
         const bestProductQuery = `
@@ -537,13 +514,13 @@ app.get("/api/farmer/sales", verifyToken, async (req, res) => {
                 p.product_name, 
                 SUM(oi.quantity) as total_sold,
                 SUM(oi.quantity * oi.price_at_purchase) as total_revenue
-            FROM Order_Items oi 
-            JOIN Products p ON oi.product_id = p.product_id 
-            WHERE p.farmer_id = ? 
+            FROM order_items oi 
+            JOIN products p ON oi.product_id = p.product_id 
+            WHERE p.farmer_id = $1 
             GROUP BY p.product_id, p.product_name 
             ORDER BY total_sold DESC 
             LIMIT 1`;
-        const [bestProductResult] = await pool.query(bestProductQuery, [userId]);
+        const bestProductResult = await pool.query(bestProductQuery, [userId]);
 
         // Get stock statistics
         const stockStatsQuery = `
@@ -552,15 +529,15 @@ app.get("/api/farmer/sales", verifyToken, async (req, res) => {
                 SUM(CASE WHEN stock_status = 'out_of_stock' THEN 1 ELSE 0 END) as out_of_stock_count,
                 SUM(CASE WHEN stock_status = 'low_stock' THEN 1 ELSE 0 END) as low_stock_count,
                 SUM(CASE WHEN stock_status = 'in_stock' THEN 1 ELSE 0 END) as in_stock_count
-            FROM Products 
-            WHERE farmer_id = ?
+            FROM products 
+            WHERE farmer_id = $1
         `;
-        const [stockStatsResult] = await pool.query(stockStatsQuery, [userId]);
+        const stockStatsResult = await pool.query(stockStatsQuery, [userId]);
 
         res.json({
-            totalRevenue: revenueResult[0].totalRevenue || 0,
-            bestProduct: bestProductResult[0] || null,
-            stockStats: stockStatsResult[0] || {
+            totalRevenue: revenueResult.rows[0].totalrevenue || 0,
+            bestProduct: bestProductResult.rows[0] || null,
+            stockStats: stockStatsResult.rows[0] || {
                 total_products: 0,
                 out_of_stock_count: 0,
                 low_stock_count: 0,
@@ -591,23 +568,23 @@ app.put("/api/farmer/products/:id", verifyToken, upload.single("image"), async (
 
     try {
         // First verify the product belongs to this farmer
-        const [ownershipCheck] = await pool.query("SELECT farmer_id FROM Products WHERE product_id = ?", [productId]);
+        const ownershipCheck = await pool.query("SELECT farmer_id FROM products WHERE product_id = $1", [productId]);
 
-        if (ownershipCheck.length === 0) {
+        if (ownershipCheck.rows.length === 0) {
             return res.status(404).json({ message: "Product not found." });
         }
 
-        if (ownershipCheck[0].farmer_id !== userId) {
+        if (ownershipCheck.rows[0].farmer_id !== userId) {
             return res.status(403).json({ message: "You can only update your own products." });
         }
 
         // Build update query based on whether there's a new image
         let query, params;
         if (image_url) {
-            query = `UPDATE Products SET product_name = ?, description = ?, price = ?, category = ?, image_url = ? WHERE product_id = ?`;
+            query = `UPDATE products SET product_name = $1, description = $2, price = $3, category = $4, image_url = $5 WHERE product_id = $6`;
             params = [product_name, description, price, category, image_url, productId];
         } else {
-            query = `UPDATE Products SET product_name = ?, description = ?, price = ?, category = ? WHERE product_id = ?`;
+            query = `UPDATE products SET product_name = $1, description = $2, price = $3, category = $4 WHERE product_id = $5`;
             params = [product_name, description, price, category, productId];
         }
 
@@ -631,20 +608,20 @@ app.delete("/api/farmer/products/:id", verifyToken, async (req, res) => {
 
     try {
         // First verify the product belongs to this farmer
-        const [ownershipCheck] = await pool.query(
-            "SELECT farmer_id FROM Products WHERE product_id = ?",
+        const ownershipCheck = await pool.query(
+            "SELECT farmer_id FROM products WHERE product_id = $1",
             [productId]
         );
 
-        if (ownershipCheck.length === 0) {
+        if (ownershipCheck.rows.length === 0) {
             return res.status(404).json({ message: "Product not found." });
         }
 
-        if (ownershipCheck[0].farmer_id !== userId) {
+        if (ownershipCheck.rows[0].farmer_id !== userId) {
             return res.status(403).json({ message: "You can only delete your own products." });
         }
 
-        await pool.query("DELETE FROM Products WHERE product_id = ?", [productId]);
+        await pool.query("DELETE FROM products WHERE product_id = $1", [productId]);
         res.json({ message: "Product deleted successfully!" });
 
     } catch (err) {
@@ -669,22 +646,22 @@ app.patch("/api/farmer/products/:id/stock", verifyToken, async (req, res) => {
 
     try {
         // First verify the product belongs to this farmer
-        const [ownershipCheck] = await pool.query(
-            "SELECT farmer_id, stock_quantity FROM Products WHERE product_id = ?",
+        const ownershipCheck = await pool.query(
+            "SELECT farmer_id, stock_quantity FROM products WHERE product_id = $1",
             [productId]
         );
 
-        if (ownershipCheck.length === 0) {
+        if (ownershipCheck.rows.length === 0) {
             return res.status(404).json({ message: "Product not found." });
         }
 
-        if (ownershipCheck[0].farmer_id !== userId) {
+        if (ownershipCheck.rows[0].farmer_id !== userId) {
             return res.status(403).json({ message: "You can only update stock for your own products." });
         }
 
         let newStock;
         if (action === 'add') {
-            newStock = parseInt(ownershipCheck[0].stock_quantity) + parseInt(quantity);
+            newStock = parseInt(ownershipCheck.rows[0].stock_quantity) + parseInt(quantity);
         } else if (action === 'set') {
             newStock = parseInt(quantity);
         } else {
@@ -697,7 +674,7 @@ app.patch("/api/farmer/products/:id/stock", verifyToken, async (req, res) => {
         // Update stock quantity and status
         const stockStatus = getStockStatus(newStock);
         await pool.query(
-            "UPDATE Products SET stock_quantity = ?, stock_status = ? WHERE product_id = ?",
+            "UPDATE products SET stock_quantity = $1, stock_status = $2 WHERE product_id = $3",
             [newStock, stockStatus, productId]
         );
 
@@ -725,21 +702,21 @@ app.patch("/api/farmer/products/:id/status", verifyToken, async (req, res) => {
 
     try {
         // First verify the product belongs to this farmer
-        const [ownershipCheck] = await pool.query(
-            "SELECT farmer_id FROM Products WHERE product_id = ?",
+        const ownershipCheck = await pool.query(
+            "SELECT farmer_id FROM products WHERE product_id = $1",
             [productId]
         );
 
-        if (ownershipCheck.length === 0) {
+        if (ownershipCheck.rows.length === 0) {
             return res.status(404).json({ message: "Product not found." });
         }
 
-        if (ownershipCheck[0].farmer_id !== userId) {
+        if (ownershipCheck.rows[0].farmer_id !== userId) {
             return res.status(403).json({ message: "You can only update status for your own products." });
         }
 
         await pool.query(
-            "UPDATE Products SET is_active = ? WHERE product_id = ?",
+            "UPDATE products SET is_active = $1 WHERE product_id = $2",
             [is_active, productId]
         );
 
@@ -781,10 +758,10 @@ app.get("/api/farmer/sales-report", verifyToken, async (req, res) => {
                 dateFilter = new Date(now.setMonth(now.getMonth() - 1));
         }
 
-        const query = `SELECT p.product_id, p.product_name, SUM(oi.quantity) as units_sold, SUM(oi.quantity * oi.price_at_purchase) as total_revenue FROM Order_Items oi JOIN Products p ON oi.product_id = p.product_id JOIN Orders o ON oi.order_id = o.order_id WHERE p.farmer_id = ? AND o.order_date >= ? GROUP BY p.product_id, p.product_name ORDER BY total_revenue DESC`;
+        const query = `SELECT p.product_id, p.product_name, SUM(oi.quantity) as units_sold, SUM(oi.quantity * oi.price_at_purchase) as total_revenue FROM order_items oi JOIN products p ON oi.product_id = p.product_id JOIN orders o ON oi.order_id = o.order_id WHERE p.farmer_id = $1 AND o.order_date >= $2 GROUP BY p.product_id, p.product_name ORDER BY total_revenue DESC`;
 
-        const [salesData] = await pool.query(query, [userId, dateFilter]);
-        res.json(salesData);
+        const result = await pool.query(query, [userId, dateFilter]);
+        res.json(result.rows);
 
     } catch (err) {
         console.error("Sales Report Error:", err);
@@ -816,23 +793,23 @@ app.post("/api/orders", verifyToken, async (req, res) => {
         return res.status(400).json({ message: "Shipping address is required." });
     }
 
-    const connection = await pool.getConnection();
+    const client = await pool.connect();
     
     try {
-        await connection.beginTransaction();
+        await client.query('BEGIN');
 
         // 1. First, check all products for availability and prevent negative stock
         for (const item of items) {
-            const [productRows] = await connection.execute(
-                "SELECT product_id, price, stock_quantity, stock_status FROM Products WHERE product_id = ? AND is_active = 1",
+            const productResult = await client.query(
+                "SELECT product_id, price, stock_quantity, stock_status FROM products WHERE product_id = $1 AND is_active = true",
                 [item.product_id]
             );
 
-            if (productRows.length === 0) {
+            if (productResult.rows.length === 0) {
                 throw new Error(`Product ${item.product_id} not found or inactive`);
             }
 
-            const product = productRows[0];
+            const product = productResult.rows[0];
             
             // Check if product is out of stock
             if (product.stock_status === 'out_of_stock') {
@@ -850,33 +827,34 @@ app.post("/api/orders", verifyToken, async (req, res) => {
 
         // 3. Create the order with custom order_number
         const orderQuery = `
-            INSERT INTO Orders (user_id, order_number, total_amount, shipping_address, status) 
-            VALUES (?, ?, ?, ?, 'pending')
+            INSERT INTO orders (user_id, order_number, total_amount, shipping_address, status) 
+            VALUES ($1, $2, $3, $4, 'pending')
+            RETURNING order_id
         `;
-        const [orderResult] = await connection.execute(orderQuery, [
+        const orderResult = await client.query(orderQuery, [
             userId, 
             orderNumber,
             total_amount, 
             shipping_address.trim()
         ]);
         
-        const orderId = orderResult.insertId;
+        const orderId = orderResult.rows[0].order_id;
 
         // 4. Add order items and update product stock
         for (const item of items) {
             // Get product price
-            const [productRows] = await connection.execute(
-                "SELECT price, stock_quantity FROM Products WHERE product_id = ?",
+            const productResult = await client.query(
+                "SELECT price, stock_quantity FROM products WHERE product_id = $1",
                 [item.product_id]
             );
-            const product = productRows[0];
+            const product = productResult.rows[0];
 
             // Add order item
             const orderItemQuery = `
-                INSERT INTO Order_Items (order_id, product_id, quantity, price_at_purchase) 
-                VALUES (?, ?, ?, ?)
+                INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase) 
+                VALUES ($1, $2, $3, $4)
             `;
-            await connection.execute(orderItemQuery, [
+            await client.query(orderItemQuery, [
                 orderId,
                 item.product_id,
                 item.quantity,
@@ -889,14 +867,14 @@ app.post("/api/orders", verifyToken, async (req, res) => {
             // Update stock quantity and status
             const stockStatus = getStockStatus(newStock);
             const updateStockQuery = `
-                UPDATE Products 
-                SET stock_quantity = ?, stock_status = ?
-                WHERE product_id = ?
+                UPDATE products 
+                SET stock_quantity = $1, stock_status = $2
+                WHERE product_id = $3
             `;
-            await connection.execute(updateStockQuery, [newStock, stockStatus, item.product_id]);
+            await client.query(updateStockQuery, [newStock, stockStatus, item.product_id]);
         }
 
-        await connection.commit();
+        await client.query('COMMIT');
 
         res.status(201).json({
             message: "Order placed successfully!",
@@ -906,7 +884,7 @@ app.post("/api/orders", verifyToken, async (req, res) => {
         });
 
     } catch (err) {
-        await connection.rollback();
+        await client.query('ROLLBACK');
         console.error("Create Order Error:", err);
         
         if (err.message.includes('Insufficient stock') || err.message.includes('out of stock') || err.message.includes('not found')) {
@@ -915,7 +893,7 @@ app.post("/api/orders", verifyToken, async (req, res) => {
             res.status(500).json({ message: "Server error creating order." });
         }
     } finally {
-        connection.release();
+        client.release();
     }
 });
 
@@ -944,19 +922,19 @@ app.get("/api/orders", verifyToken, async (req, res) => {
                 p.image_url,
                 u.first_name as farmer_first_name,
                 u.last_name as farmer_last_name
-            FROM Orders o
-            LEFT JOIN Order_Items oi ON o.order_id = oi.order_id
-            LEFT JOIN Products p ON oi.product_id = p.product_id
-            LEFT JOIN Users u ON p.farmer_id = u.user_id
-            WHERE o.user_id = ?
+            FROM orders o
+            LEFT JOIN order_items oi ON o.order_id = oi.order_id
+            LEFT JOIN products p ON oi.product_id = p.product_id
+            LEFT JOIN users u ON p.farmer_id = u.user_id
+            WHERE o.user_id = $1
             ORDER BY o.order_date DESC
         `;
 
-        const [rows] = await pool.query(ordersQuery, [userId]);
+        const result = await pool.query(ordersQuery, [userId]);
 
         const ordersMap = new Map();
         
-        rows.forEach(row => {
+        result.rows.forEach(row => {
             if (!ordersMap.has(row.order_id)) {
                 ordersMap.set(row.order_id, {
                     order_id: row.order_id,
@@ -986,7 +964,7 @@ app.get("/api/orders", verifyToken, async (req, res) => {
         res.json(orders);
 
     } catch (err) {
-        console.error("Get Orders Error:", err);
+        console.error("Get orders Error:", err);
         res.status(500).json({ message: "Error fetching orders." });
     }
 });
@@ -1008,16 +986,16 @@ app.get("/api/products/suggestions", async (req, res) => {
                 p.image_url,
                 u.first_name,
                 u.last_name
-            FROM Products p 
-            JOIN Users u ON p.farmer_id = u.user_id 
-            WHERE p.stock_quantity > 0 AND p.is_active = 1 AND p.stock_status != 'out_of_stock'
-            ORDER BY RAND() 
-            LIMIT ?
+            FROM products p 
+            JOIN users u ON p.farmer_id = u.user_id 
+            WHERE p.stock_quantity > 0 AND p.is_active = true AND p.stock_status != 'out_of_stock'
+            ORDER BY RANDOM() 
+            LIMIT $1
         `;
         
-        const [rows] = await pool.query(query, [parseInt(limit)]);
+        const result = await pool.query(query, [parseInt(limit)]);
 
-        const productsWithFullImagePaths = rows.map(product => {
+        const productsWithFullImagePaths = result.rows.map(product => {
             if (product.image_url && !product.image_url.startsWith('http')) {
                 return {
                     ...product,
@@ -1060,19 +1038,19 @@ app.get("/api/farmer/orders", verifyToken, async (req, res) => {
                 u.first_name as customer_first_name,
                 u.last_name as customer_last_name,
                 u.email as customer_email
-            FROM Orders o
-            JOIN Order_Items oi ON o.order_id = oi.order_id
-            JOIN Products p ON oi.product_id = p.product_id
-            JOIN Users u ON o.user_id = u.user_id
-            WHERE p.farmer_id = ?
+            FROM orders o
+            JOIN order_items oi ON o.order_id = oi.order_id
+            JOIN products p ON oi.product_id = p.product_id
+            JOIN users u ON o.user_id = u.user_id
+            WHERE p.farmer_id = $1
             ORDER BY o.order_date DESC
         `;
 
-        const [rows] = await pool.query(query, [userId]);
+        const result = await pool.query(query, [userId]);
 
         const ordersMap = new Map();
         
-        rows.forEach(row => {
+        result.rows.forEach(row => {
             if (!ordersMap.has(row.order_id)) {
                 ordersMap.set(row.order_id, {
                     order_id: row.order_id,
@@ -1101,7 +1079,7 @@ app.get("/api/farmer/orders", verifyToken, async (req, res) => {
         res.json(orders);
 
     } catch (err) {
-        console.error("Get Farmer Orders Error:", err);
+        console.error("Get Farmer orders Error:", err);
         res.status(500).json({ message: "Error fetching orders." });
     }
 });
@@ -1125,19 +1103,19 @@ app.patch("/api/farmer/orders/:id/status", verifyToken, async (req, res) => {
         // Verify the farmer owns products in this order
         const verifyQuery = `
             SELECT COUNT(*) as product_count 
-            FROM Order_Items oi 
-            JOIN Products p ON oi.product_id = p.product_id 
-            WHERE oi.order_id = ? AND p.farmer_id = ?
+            FROM order_items oi 
+            JOIN products p ON oi.product_id = p.product_id 
+            WHERE oi.order_id = $1 AND p.farmer_id = $2
         `;
-        const [verifyResult] = await pool.query(verifyQuery, [orderId, userId]);
+        const verifyResult = await pool.query(verifyQuery, [orderId, userId]);
 
-        if (verifyResult[0].product_count === 0) {
+        if (verifyResult.rows[0].product_count === 0) {
             return res.status(403).json({ message: "You can only update orders containing your products." });
         }
 
         // Update order status
         await pool.query(
-            "UPDATE Orders SET status = ?, updated_at = NOW() WHERE order_id = ?",
+            "UPDATE orders SET status = $1, updated_at = NOW() WHERE order_id = $2",
             [status, orderId]
         );
 
@@ -1190,15 +1168,15 @@ app.get("/api/farmer/analytics", verifyToken, async (req, res) => {
                 SUM(oi.quantity * oi.price_at_purchase) as total_revenue,
                 AVG(oi.price_at_purchase) as avg_price,
                 COUNT(DISTINCT o.order_id) as order_count
-            FROM Order_Items oi
-            JOIN Products p ON oi.product_id = p.product_id
-            JOIN Orders o ON oi.order_id = o.order_id
-            WHERE p.farmer_id = ? AND o.order_date >= ?
+            FROM order_items oi
+            JOIN products p ON oi.product_id = p.product_id
+            JOIN orders o ON oi.order_id = o.order_id
+            WHERE p.farmer_id = $1 AND o.order_date >= $2
             GROUP BY p.product_id, p.product_name, p.category, p.stock_status
             ORDER BY total_revenue DESC
         `;
 
-        const [salesData] = await pool.query(salesQuery, [userId, dateFilter]);
+        const salesResult = await pool.query(salesQuery, [userId, dateFilter]);
 
         // Customer statistics - FIXED: This was missing!
         const customerQuery = `
@@ -1206,13 +1184,13 @@ app.get("/api/farmer/analytics", verifyToken, async (req, res) => {
                 COUNT(DISTINCT o.user_id) as total_customers,
                 COUNT(DISTINCT o.order_id) as total_orders,
                 AVG(o.total_amount) as avg_order_value
-            FROM Orders o
-            JOIN Order_Items oi ON o.order_id = oi.order_id
-            JOIN Products p ON oi.product_id = p.product_id
-            WHERE p.farmer_id = ? AND o.order_date >= ?
+            FROM orders o
+            JOIN order_items oi ON o.order_id = oi.order_id
+            JOIN products p ON oi.product_id = p.product_id
+            WHERE p.farmer_id = $1 AND o.order_date >= $2
         `;
 
-        const [customerStats] = await pool.query(customerQuery, [userId, dateFilter]);
+        const customerStats = await pool.query(customerQuery, [userId, dateFilter]);
 
         // Stock analytics
         const stockAnalyticsQuery = `
@@ -1220,23 +1198,23 @@ app.get("/api/farmer/analytics", verifyToken, async (req, res) => {
                 stock_status,
                 COUNT(*) as product_count,
                 SUM(stock_quantity) as total_quantity
-            FROM Products 
-            WHERE farmer_id = ?
+            FROM products 
+            WHERE farmer_id = $1
             GROUP BY stock_status
         `;
 
-        const [stockAnalytics] = await pool.query(stockAnalyticsQuery, [userId]);
+        const stockAnalytics = await pool.query(stockAnalyticsQuery, [userId]);
 
         // Calculate summary
-        const totalRevenue = salesData.reduce((sum, item) => sum + parseFloat(item.total_revenue || 0), 0);
-        const totalItemsSold = salesData.reduce((sum, item) => sum + parseInt(item.total_sold || 0), 0);
-        const topProduct = salesData[0] || null;
+        const totalRevenue = salesResult.rows.reduce((sum, item) => sum + parseFloat(item.total_revenue || 0), 0);
+        const totalItemsSold = salesResult.rows.reduce((sum, item) => sum + parseInt(item.total_sold || 0), 0);
+        const topProduct = salesResult.rows[0] || null;
 
         res.json({
             period,
-            salesData,
-            stockAnalytics,
-            customerStats: customerStats[0] || { // FIXED: Added customerStats
+            salesData: salesResult.rows,
+            stockAnalytics: stockAnalytics.rows,
+            customerStats: customerStats.rows[0] || {
                 total_customers: 0,
                 total_orders: 0,
                 avg_order_value: 0
@@ -1263,7 +1241,7 @@ app.get("/api/analytics/product-sales", verifyToken, async (req, res) => {
         let params = [];
 
         if (role === 'farmer') {
-            query = "SELECT * FROM ProductSalesSummary WHERE farmer_id = ? ORDER BY total_revenue DESC";
+            query = "SELECT * FROM ProductSalesSummary WHERE farmer_id = $1 ORDER BY total_revenue DESC";
             params = [userId];
         } else if (role === 'customer') {
             query = "SELECT * FROM ProductSalesSummary WHERE stock_status != 'out_of_stock' ORDER BY total_sold DESC LIMIT 50";
@@ -1271,10 +1249,10 @@ app.get("/api/analytics/product-sales", verifyToken, async (req, res) => {
             return res.status(403).json({ message: "Access denied" });
         }
 
-        const [results] = await pool.query(query, params);
+        const result = await pool.query(query, params);
 
         // Add full image URLs
-        const productsWithImages = results.map(product => ({
+        const productsWithImages = result.rows.map(product => ({
             ...product,
             image_url: product.image_url ? `http://localhost:${PORT}/uploads/${product.image_url}` : null
         }));
@@ -1295,14 +1273,14 @@ app.get("/api/analytics/farmer-performance", verifyToken, async (req, res) => {
     }
 
     try {
-        const query = "SELECT * FROM FarmerPerformance WHERE farmer_id = ?";
-        const [results] = await pool.query(query, [userId]);
+        const query = "SELECT * FROM FarmerPerformance WHERE farmer_id = $1";
+        const result = await pool.query(query, [userId]);
 
-        if (results.length === 0) {
+        if (result.rows.length === 0) {
             return res.status(404).json({ message: "Performance data not found" });
         }
 
-        res.json(results[0]);
+        res.json(result.rows[0]);
     } catch (err) {
         console.error("Farmer Performance Error:", err);
         res.status(500).json({ message: "Error fetching farmer performance" });
@@ -1341,16 +1319,16 @@ app.get("/api/analytics/product-sales", verifyToken, async (req, res) => {
         let params = [];
 
         if (role === 'farmer') {
-            query = "SELECT * FROM ProductSalesSummary WHERE farmer_id = ? ORDER BY total_revenue DESC";
+            query = "SELECT * FROM ProductSalesSummary WHERE farmer_id = $1 ORDER BY total_revenue DESC";
             params = [userId];
         } else {
             return res.status(403).json({ message: "Access denied" });
         }
 
-        const [results] = await pool.query(query, params);
+        const result = await pool.query(query, params);
 
         // Add full image URLs
-        const productsWithImages = results.map(product => ({
+        const productsWithImages = result.rows.map(product => ({
             ...product,
             image_url: product.image_url ? `http://localhost:${PORT}/uploads/${product.image_url}` : null
         }));
@@ -1358,9 +1336,9 @@ app.get("/api/analytics/product-sales", verifyToken, async (req, res) => {
         res.json({
             data: productsWithImages,
             summary: {
-                totalProducts: results.length,
-                totalRevenue: results.reduce((sum, p) => sum + parseFloat(p.total_revenue), 0),
-                totalItemsSold: results.reduce((sum, p) => sum + parseInt(p.total_sold), 0),
+                totalProducts: result.rows.length,
+                totalRevenue: result.rows.reduce((sum, p) => sum + parseFloat(p.total_revenue), 0),
+                totalItemsSold: result.rows.reduce((sum, p) => sum + parseInt(p.total_sold), 0),
                 source: "database_view"
             }
         });
@@ -1379,15 +1357,15 @@ app.get("/api/analytics/farmer-performance", verifyToken, async (req, res) => {
     }
 
     try {
-        const query = "SELECT * FROM FarmerPerformance WHERE farmer_id = ?";
-        const [results] = await pool.query(query, [userId]);
+        const query = "SELECT * FROM FarmerPerformance WHERE farmer_id = $1";
+        const result = await pool.query(query, [userId]);
 
-        if (results.length === 0) {
+        if (result.rows.length === 0) {
             return res.status(404).json({ message: "Performance data not found" });
         }
 
         res.json({
-            ...results[0],
+            ...result.rows[0],
             source: "database_view"
         });
     } catch (err) {
@@ -1406,19 +1384,19 @@ app.get("/api/analytics/enhanced", verifyToken, async (req, res) => {
 
     try {
         // Get data from both views
-        const [performanceData] = await pool.query(
-            "SELECT * FROM FarmerPerformance WHERE farmer_id = ?", 
+        const performanceResult = await pool.query(
+            "SELECT * FROM FarmerPerformance WHERE farmer_id = $1", 
             [userId]
         );
 
-        const [salesData] = await pool.query(
-            "SELECT * FROM ProductSalesSummary WHERE farmer_id = ? ORDER BY total_revenue DESC LIMIT 10",
+        const salesResult = await pool.query(
+            "SELECT * FROM ProductSalesSummary WHERE farmer_id = $1 ORDER BY total_revenue DESC LIMIT 10",
             [userId]
         );
 
         res.json({
-            performance: performanceData[0] || {},
-            topProducts: salesData,
+            performance: performanceResult.rows[0] || {},
+            topProducts: salesResult.rows,
             analyticsSource: "database_views",
             timestamp: new Date().toISOString()
         });
@@ -1441,14 +1419,14 @@ app.post("/api/chat/send", verifyToken, async (req, res) => {
         return res.status(400).json({ message: "Message cannot be empty." });
     }
 
-    const connection = await pool.getConnection();
+    const client = await pool.connect();
 
     try {
-        await connection.beginTransaction();
+        await client.query('BEGIN');
 
         // 1. Save user's message to the database
-        const userMessageQuery = `INSERT INTO ChatHistory (user_id, role, text) VALUES (?, 'user', ?)`;
-        await connection.execute(userMessageQuery, [userId, message.trim()]);
+        const userMessageQuery = `INSERT INTO chathistory (user_id, role, text) VALUES ($1, 'user', $2)`;
+        await client.query(userMessageQuery, [userId, message.trim()]);
 
         // 2. Get a response from the AI model (using Groq)
         const chatCompletion = await groqClient.chat.completions.create({
@@ -1468,27 +1446,26 @@ app.post("/api/chat/send", verifyToken, async (req, res) => {
         const aiResponseText = chatCompletion.choices[0]?.message?.content || "Sorry, I couldn't process that request.";
 
         // 3. Save AI's response to the database
-        const aiMessageQuery = `INSERT INTO ChatHistory (user_id, role, text) VALUES (?, 'model', ?)`;
-        const [aiResult] = await connection.execute(aiMessageQuery, [userId, aiResponseText]);
+        const aiMessageQuery = `INSERT INTO chathistory (user_id, role, text) VALUES ($1, 'model', $2) RETURNING message_id`;
+        const aiResult = await client.query(aiMessageQuery, [userId, aiResponseText]);
 
-        await connection.commit();
+        await client.query('COMMIT');
 
         // 4. Send the AI response back to the front-end
         res.status(200).json({
             response: aiResponseText,
             timestamp: new Date().toISOString(),
-            message_id: aiResult.insertId
+            message_id: aiResult.rows[0].message_id
         });
 
     } catch (error) {
-        await connection.rollback();
+        await client.query('ROLLBACK');
         console.error('Chat API Error:', error);
         res.status(500).json({ message: "Failed to get a response from the assistant." });
     } finally {
-        connection.release();
+        client.release();
     }
 });
-
 
 /* * GET CHAT HISTORY */
 app.get("/api/chat/history", verifyToken, async (req, res) => {
@@ -1496,24 +1473,23 @@ app.get("/api/chat/history", verifyToken, async (req, res) => {
     try {
         const query = `
             SELECT message_id, role, text, timestamp
-            FROM ChatHistory
-            WHERE user_id = ?
+            FROM chathistory
+            WHERE user_id = $1
             ORDER BY timestamp ASC
         `;
-        const [history] = await pool.query(query, [userId]);
-        res.json(history);
+        const result = await pool.query(query, [userId]);
+        res.json(result.rows);
     } catch (error) {
         console.error('Error fetching chat history:', error);
         res.status(500).json({ message: "Failed to load chat history." });
     }
 });
 
-
 /* * DELETE CHAT HISTORY */
 app.delete("/api/chat/history", verifyToken, async (req, res) => {
     const { userId } = req.user;
     try {
-        const query = `DELETE FROM ChatHistory WHERE user_id = ?`;
+        const query = `DELETE FROM chathistory WHERE user_id = $1`;
         await pool.query(query, [userId]);
         res.status(200).json({ message: "Chat history cleared successfully." });
     } catch (error) {
@@ -1521,6 +1497,18 @@ app.delete("/api/chat/history", verifyToken, async (req, res) => {
         res.status(500).json({ message: "Failed to clear chat history." });
     }
 });
+
+// === TEST ROUTE TO VERIFY DATABASE CONNECTION ===
+app.get("/test-db", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT NOW()");
+    res.json({ success: true, db_time: result.rows[0] });
+  } catch (err) {
+    console.error("Database test error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 
 if (process.env.VERCEL) {
   module.exports = app;

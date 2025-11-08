@@ -30,7 +30,7 @@ function AddProductForm({ onProductAdded }) {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const response = await fetch("http://localhost:3001/api/categories");
+        const response = await fetch("https://farmermarketproject.onrender.com/api/categories");
         if (!response.ok) {
           throw new Error("Could not fetch categories.");
         }
