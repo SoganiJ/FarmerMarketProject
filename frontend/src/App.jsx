@@ -48,16 +48,17 @@ function App() {
   }, []);
 
   const fetchCategories = async () => {
-    try {
-      const response = await fetch('http://localhost:3001/api/categories');
-      if (response.ok) {
-        const data = await response.json();
-        setCategories(data);
-      }
-    } catch (error) {
-      console.error('Error fetching categories:', error);
+  try {
+    const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/categories`);
+    if (response.ok) {
+      const data = await response.json();
+      setCategories(data);
     }
-  };
+  } catch (error) {
+    console.error('Error fetching categories:', error);
+  }
+};
+
 
   const handleLogin = (authData) => {
     setAuth(authData);
