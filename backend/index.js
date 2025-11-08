@@ -38,17 +38,12 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // === DATABASE CONNECTION ===
 const pool = new Pool({
-    host: process.env.PGHOST,
-    user: process.env.PGUSER,
-    password: process.env.PGPASSWORD,
-    database: process.env.PGDATABASE,
-    port: process.env.PGPORT || 5432,
-    ssl: { rejectUnauthorized: false },
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
 });
 
-pool.connect()
-  .then(() => console.log("✅ Connected to PostgreSQL successfully"))
-  .catch(err => console.error("❌ Database connection failed:", err.message));
+pool.on('connect', () => console.log("✅ Connected to PostgreSQL successfully"));
+pool.on('error', err => console.error("❌ Database pool error:", err));
 
 // === GROQ AI CONFIGURATION ===
 const OpenAI = require('openai');
@@ -183,16 +178,21 @@ app.post("/api/register", async (req, res) => {
             return res.status(400).json({ message: "All required fields must be filled." });
         }
 
-        const [existingUser] = await pool.query("SELECT * FROM Users WHERE email = ? OR username = ?", [email, username]);
-        if (existingUser.length > 0) {
+        const { rows: existingUser } = await pool.query(
+  "SELECT * FROM users WHERE email = $1 OR username = $2",
+  [email, username]
+);        if (existingUser.length > 0) {
             return res.status(409).json({ message: "Email or username already in use." });
         }
 
         const saltRounds = 10;
         const passwordHash = await bcrypt.hash(password, saltRounds);
 
-        const query = `INSERT INTO Users (username, email, password_hash, user_type, first_name, last_name, address) VALUES (?, ?, ?, ?, ?, ?, ?)`;
-
+        const query = `
+  INSERT INTO users (username, email, password_hash, user_type, first_name, last_name, address)
+  VALUES ($1, $2, $3, $4, $5, $6, $7)
+  RETURNING user_id
+`;
         const [result] = await pool.query(query, [
             username,
             email,
