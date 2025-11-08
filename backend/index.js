@@ -1,7 +1,7 @@
 // === IMPORTS ===
 const express = require("express");
 const cors = require("cors");
-const mysql = require("mysql2");
+const { Pool } = require("pg");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const multer = require('multer'); // For handling file uploads
@@ -37,25 +37,18 @@ app.use(express.json()); // Allows the server to read JSON data
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // === DATABASE CONNECTION ===
-const pool = mysql.createPool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
-}).promise();
+const pool = new Pool({
+    host: process.env.PGHOST,
+    user: process.env.PGUSER,
+    password: process.env.PGPASSWORD,
+    database: process.env.PGDATABASE,
+    port: process.env.PGPORT || 5432,
+    ssl: { rejectUnauthorized: false },
+});
 
-// Test the connection
-(async () => {
-    try {
-        await pool.query('SELECT 1');
-        console.log("✅ Database connection successful!");
-    } catch (err) {
-        console.error("❌ Database connection failed:", err);
-    }
-})();
+pool.connect()
+  .then(() => console.log("✅ Connected to PostgreSQL successfully"))
+  .catch(err => console.error("❌ Database connection failed:", err.message));
 
 // === GROQ AI CONFIGURATION ===
 const OpenAI = require('openai');
