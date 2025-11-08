@@ -470,12 +470,13 @@ app.put("/api/profile", verifyToken, async (req, res) => {
 app.get("/api/categories", async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT DISTINCT category FROM Products WHERE category IS NOT NULL ORDER BY category ASC"
+      "SELECT DISTINCT category FROM products WHERE category IS NOT NULL ORDER BY category ASC;"
     );
-    const categories = result.rows.map((row) => row.category);
+    const categories = result.rows.map(row => row.category);
+    console.log("Fetched categories:", categories);
     res.json(categories);
   } catch (err) {
-    console.error("Error fetching categories:", err.message);
+    console.error("Error fetching categories:", err);
     res.status(500).json({ message: "Server error fetching categories." });
   }
 });
