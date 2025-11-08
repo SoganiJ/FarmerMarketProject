@@ -27,7 +27,7 @@ const LOW_STOCK_THRESHOLD = 10; // Products with less than 10 items are consider
 
 // === MIDDLEWARE ===
 app.use(cors({
-    origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
+    origin: ["http://localhost:5173", "http://127.0.0.1:5173","https://farmer-market-project-ocrbwa68v.vercel.app"],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"], // PATCH is also needed for stock/status updates
     credentials: true
 }));
