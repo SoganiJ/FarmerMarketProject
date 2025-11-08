@@ -1526,6 +1526,10 @@ app.delete("/api/chat/history", verifyToken, async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
+if (process.env.VERCEL) {
+  module.exports = app;
+} else {
+  app.listen(PORT, () => {
     console.log(`Backend server running on http://localhost:${PORT}`);
-});
+  });
+}
