@@ -14,6 +14,95 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET;
 
+const fs = require("fs");
+const csv = require("csv-parser");
+const axios = require("axios");
+
+const WEATHER_API_KEY = "30d4741c779ba94c470ca1f63045390a";
+const CSV_FILE_PATH = "latest_stock_data.csv";
+
+async function getFarmerAdvice(crop_name, district, state, crop_status) {
+  try {
+    const rows = [];
+    if (!fs.existsSync(CSV_FILE_PATH)) {
+      return { error: "The 'latest_stock_data.csv' file was not found." };
+    }
+
+    // Step 1: Read CSV data
+    await new Promise((resolve, reject) => {
+      fs.createReadStream(CSV_FILE_PATH)
+        .pipe(csv())
+        .on("data", (row) => rows.push(row))
+        .on("end", resolve)
+        .on("error", reject);
+    });
+
+    const cropNameTitle =
+      crop_name.trim().charAt(0).toUpperCase() + crop_name.trim().slice(1).toLowerCase();
+    const filtered = rows.filter(
+      (r) =>
+        r.Commodity?.trim().toLowerCase() === cropNameTitle.toLowerCase() &&
+        r.District?.trim().toLowerCase() === district.trim().toLowerCase()
+    );
+
+    if (filtered.length === 0) {
+      return { advice: `No mandi price data found for ${crop_name} in ${district}.` };
+    }
+
+    const latest = filtered[filtered.length - 1];
+    const mandi_price_quintal = parseFloat(latest.Modal_Price);
+    const mandi_price_per_kg = mandi_price_quintal / 100;
+
+    // Step 2: Fetch weather data
+    let temperature = null,
+      humidity = null,
+      weather_condition = "Not available";
+    try {
+      const url = `https://api.openweathermap.org/data/2.5/weather?q=${district},${state},IN&appid=${WEATHER_API_KEY}&units=metric`;
+      const res = await axios.get(url);
+      temperature = res.data.main.temp;
+      humidity = res.data.main.humidity;
+      weather_condition = res.data.weather[0].description;
+    } catch {
+      console.log("Weather API unavailable, skipping...");
+    }
+
+    // Step 3: Generate advice
+    const isHealthy = crop_status.toLowerCase().includes("healthy");
+    let advice = "General advice: Monitor market trends and weather forecasts closely.";
+
+    if (isHealthy) {
+      if (temperature && temperature >= 20 && temperature <= 30 && humidity >= 40 && humidity <= 70) {
+        advice = `Weather is good for storage. Current Mandi Price is ₹${mandi_price_per_kg.toFixed(
+          2
+        )}/kg. Consider waiting if prices are low.`;
+      } else if (mandi_price_per_kg > 25) {
+        advice = `Price is high at ₹${mandi_price_per_kg.toFixed(2)}/kg! This is a good time to sell.`;
+      } else {
+        advice = `Crop is healthy. Current price is ₹${mandi_price_per_kg.toFixed(
+          2
+        )}/kg. You can choose to sell now or store and wait for better prices.`;
+      }
+    } else {
+      advice = `Crop is diseased. It is highly recommended to sell now at the current price of ₹${mandi_price_per_kg.toFixed(
+        2
+      )}/kg to avoid further losses.`;
+    }
+
+    return {
+      advice,
+      mandi_price: `₹${mandi_price_per_kg.toFixed(2)}`,
+      mandi_price_quintal: `₹${mandi_price_quintal}`,
+      temperature: temperature ? `${temperature}°C` : "Not available",
+      humidity: humidity ? `${humidity}%` : "Not available",
+      weather_condition,
+    };
+  } catch (err) {
+    return { error: `Error processing request: ${err.message}` };
+  }
+}
+
+
 // === ORDER ID GENERATION ===
 function generateOrderId() {
     const date = new Date();
@@ -379,6 +468,18 @@ app.get("/api/categories", async (req, res) => {
         console.error("Error fetching categories:", err);
         res.status(500).json({ message: "Server error fetching categories." });
     }
+});
+
+// === PRICE ADVICE ENDPOINT ===
+app.get("/api/price-advice", async (req, res) => {
+  const { crop_name, district, state, crop_status } = req.query;
+
+  if (!crop_name || !district || !state || !crop_status) {
+    return res.status(400).json({ error: "Missing required parameters." });
+  }
+
+  const result = await getFarmerAdvice(crop_name, district, state, crop_status);
+  res.json(result);
 });
 
 // === FARMER-SPECIFIC ENDPOINTS ===
