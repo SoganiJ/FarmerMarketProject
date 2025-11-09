@@ -118,13 +118,14 @@ const LOW_STOCK_THRESHOLD = 10;
 app.use(cors({
     origin: [
         "http://localhost:5173",
-        "http://127.0.0.1:5173", 
-        "https://farmer-market-project.vercel.app",
-        "https://farmermarketproject.onrender.com"
+        "http://127.0.0.1:5173",
+        "https://farmer-market-project.vercel.app" // ✅ your live frontend
     ],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true
 }));
+
 
 app.options(/.*/, cors());
 app.use(express.json());
