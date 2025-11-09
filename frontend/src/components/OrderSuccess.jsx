@@ -32,11 +32,16 @@ function OrderSuccess({ orderId, totalAmount, setView, auth }) {
 
   const fetchLatestOrder = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/orders', {
-        headers: {
-          'Authorization': `Bearer ${auth.token}`
-        }
-      });
+  const API_URL = import.meta.env.DEV
+    ? "http://localhost:3001/api"
+    : "https://farmermarketproject.onrender.com/api";
+
+  const response = await fetch(`${API_URL}/orders`, {
+    headers: {
+      'Authorization': `Bearer ${auth.token}`
+    }
+  });
+
       
       if (response.ok) {
         const orders = await response.json();
@@ -62,20 +67,26 @@ function OrderSuccess({ orderId, totalAmount, setView, auth }) {
   };
 
   const fetchProductSuggestions = async () => {
-    try {
-      setLoadingSuggestions(true);
-      const response = await fetch('http://localhost:3001/api/products/suggestions?limit=8');
-      if (response.ok) {
-        const data = await response.json();
-        setSuggestions(data);
-      }
-    } catch (error) {
-      console.error('Error fetching suggestions:', error);
-    } finally {
-      setLoadingSuggestions(false);
-      setLoading(false);
+  try {
+    setLoadingSuggestions(true);
+
+    const API_URL = import.meta.env.DEV
+      ? "http://localhost:3001/api"
+      : "https://farmermarketproject.onrender.com/api";
+
+    const response = await fetch(`${API_URL}/products/suggestions?limit=8`);
+    if (response.ok) {
+      const data = await response.json();
+      setSuggestions(data);
     }
-  };
+  } catch (error) {
+    console.error('Error fetching suggestions:', error);
+  } finally {
+    setLoadingSuggestions(false);
+    setLoading(false);
+  }
+};
+
 
   const downloadInvoice = () => {
     const printWindow = window.open('', '_blank');

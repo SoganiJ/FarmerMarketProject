@@ -22,11 +22,13 @@ function UserDashboard({ auth, setView }) {
       setLoading(true);
       
       // Fetch user profile
-      const profileResponse = await fetch('http://localhost:3001/api/profile', {
-        headers: {
-          'Authorization': `Bearer ${auth.token}`
-        }
-      });
+      const API_URL = import.meta.env.DEV
+  ? "http://localhost:3001/api"
+  : "https://farmermarketproject.onrender.com/api";
+
+const profileResponse = await fetch(`${API_URL}/profile`, {
+  headers: { 'Authorization': `Bearer ${auth.token}` }
+});
       
       if (profileResponse.ok) {
         const profileData = await profileResponse.json();
@@ -34,11 +36,13 @@ function UserDashboard({ auth, setView }) {
       }
 
       // Fetch user orders
-      const ordersResponse = await fetch('http://localhost:3001/api/orders', {
-        headers: {
-          'Authorization': `Bearer ${auth.token}`
-        }
-      });
+      
+const ordersResponse = await fetch(`${API_URL}/orders`, {
+  headers: {
+    'Authorization': `Bearer ${auth.token}`
+  }
+});
+
       
       if (ordersResponse.ok) {
         const ordersData = await ordersResponse.json();
@@ -65,14 +69,14 @@ function UserDashboard({ auth, setView }) {
 
   const updateProfile = async (updatedData) => {
     try {
-      const response = await fetch('http://localhost:3001/api/profile', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${auth.token}`
-        },
-        body: JSON.stringify(updatedData)
-      });
+      const response = await fetch(`${API_URL}/profile`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${auth.token}`
+    },
+    body: JSON.stringify(updatedData)
+  });
 
       if (response.ok) {
         const result = await response.json();

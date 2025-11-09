@@ -52,17 +52,22 @@ function StockManagement({ product, onStockUpdated, onCancel, auth }) {
     setSuccess('');
     
     try {
-      const response = await fetch(`http://localhost:3001/api/farmer/products/${product.product_id}/stock`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${auth.token}`
-        },
-        body: JSON.stringify({
-          quantity: parseInt(quantity),
-          action
-        })
-      });
+  const API_URL = import.meta.env.DEV
+    ? "http://localhost:3001/api"
+    : "https://farmermarketproject.onrender.com/api";
+
+  const response = await fetch(`${API_URL}/farmer/products/${product.product_id}/stock`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${auth.token}`
+    },
+    body: JSON.stringify({
+      quantity: parseInt(quantity),
+      action
+    })
+  });
+
 
       const data = await response.json();
 

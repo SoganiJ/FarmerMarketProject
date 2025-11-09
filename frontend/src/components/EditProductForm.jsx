@@ -11,9 +11,11 @@ function EditProductForm({ product, onProductUpdated, onCancel, auth }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [imagePreview, setImagePreview] = useState(
-    product.image_url ? `http://localhost:3001/uploads/${product.image_url}` : null
-  );
+ const [imagePreview, setImagePreview] = useState(
+  product.image_url
+    ? `${import.meta.env.VITE_API_BASE_URL}/uploads/${product.image_url}`
+    : null
+);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -94,13 +96,17 @@ function EditProductForm({ product, onProductUpdated, onCancel, auth }) {
     }
 
     try {
-      const response = await fetch(`http://localhost:3001/api/farmer/products/${product.product_id}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${auth.token}`
-        },
-        body: data
-      });
+  const response = await fetch(
+    `${import.meta.env.VITE_API_BASE_URL}/api/farmer/products/${product.product_id}`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${auth.token}`
+      },
+      body: data
+    }
+  );
+
 
       const result = await response.json();
 

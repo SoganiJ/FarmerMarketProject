@@ -42,15 +42,19 @@ function FarmerDashboard({ auth }) {
 
   // NEW: Sync stock status using a cursor procedure
   const syncAllStockStatus = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('http://localhost:3001/api/admin/update-stock-status', {
+  try {
+    setLoading(true);
+    const response = await fetch(
+      `${import.meta.env.VITE_API_BASE_URL}/api/admin/update-stock-status`,
+      {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${auth.token}`,
           'Content-Type': 'application/json'
         }
-      });
+      }
+    );
+
 
       if (response.ok) {
         const result = await response.json();
@@ -69,11 +73,15 @@ function FarmerDashboard({ auth }) {
 
   // NEW: Fetch view-based analytics
   const fetchViewAnalytics = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('http://localhost:3001/api/analytics/enhanced', {
+  try {
+    setLoading(true);
+    const response = await fetch(
+      `${import.meta.env.VITE_API_BASE_URL}/api/analytics/enhanced`,
+      {
         headers: { 'Authorization': `Bearer ${auth.token}` }
-      });
+      }
+    );
+
 
       if (response.ok) {
         const data = await response.json();
@@ -93,31 +101,27 @@ function FarmerDashboard({ auth }) {
 
 
   const fetchFarmerData = async () => {
-    try {
-      setLoading(true);
-      
-      console.log('Starting to fetch farmer data...');
-      
-      const productsResponse = await fetch('http://localhost:3001/api/farmer/products', {
-        headers: { 'Authorization': `Bearer ${auth.token}` }
-      });
+  try {
+    setLoading(true);
+    console.log('Starting to fetch farmer data...');
 
-      const ordersResponse = await fetch('http://localhost:3001/api/farmer/orders', {
-        headers: { 'Authorization': `Bearer ${auth.token}` }
-      });
+    const API_URL = import.meta.env.DEV
+      ? "http://localhost:3001/api"
+      : "https://farmermarketproject.onrender.com/api";
 
-      const salesResponse = await fetch('http://localhost:3001/api/farmer/sales', {
-        headers: { 'Authorization': `Bearer ${auth.token}` }
-      });
+    const headers = { 'Authorization': `Bearer ${auth.token}` };
 
-      const analyticsResponse = await fetch('http://localhost:3001/api/farmer/analytics', {
-        headers: { 'Authorization': `Bearer ${auth.token}` }
-      });
+    const [productsResponse, ordersResponse, salesResponse, analyticsResponse, performanceResponse] =
+      await Promise.all([
+        fetch(`${API_URL}/farmer/products`, { headers }),
+        fetch(`${API_URL}/farmer/orders`, { headers }),
+        fetch(`${API_URL}/farmer/sales`, { headers }),
+        fetch(`${API_URL}/farmer/analytics`, { headers }),
+        fetch(`${API_URL}/analytics/farmer-performance`, { headers })
+      ]);
 
-      // NEW: Fetch view-based performance data
-      const performanceResponse = await fetch('http://localhost:3001/api/analytics/farmer-performance', {
-        headers: { 'Authorization': `Bearer ${auth.token}` }
-      });
+    // You can continue with parsing and setting state as before...
+
 
       if (productsResponse.ok) {
         const products = await productsResponse.json();
@@ -264,10 +268,15 @@ function FarmerDashboard({ auth }) {
     hideConfirmDialog();
     
     try {
-      const response = await fetch(`http://localhost:3001/api/farmer/products/${productId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${auth.token}` }
-      });
+  const API_URL = import.meta.env.DEV
+    ? "http://localhost:3001/api"
+    : "https://farmermarketproject.onrender.com/api";
+
+  const response = await fetch(`${API_URL}/farmer/products/${productId}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${auth.token}` }
+  });
+
 
       if (response.ok) {
         fetchFarmerData();
@@ -285,14 +294,19 @@ function FarmerDashboard({ auth }) {
     hideConfirmDialog();
     
     try {
-      const response = await fetch(`http://localhost:3001/api/farmer/products/${productId}/status`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${auth.token}`
-        },
-        body: JSON.stringify({ is_active: !currentStatus })
-      });
+  const API_URL = import.meta.env.DEV
+    ? "http://localhost:3001/api"
+    : "https://farmermarketproject.onrender.com/api";
+
+  const response = await fetch(`${API_URL}/farmer/products/${productId}/status`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${auth.token}`
+    },
+    body: JSON.stringify({ is_active: !currentStatus })
+  });
+
 
       if (response.ok) {
         fetchFarmerData();

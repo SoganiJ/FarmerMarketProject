@@ -14,11 +14,16 @@ function SalesReport({ auth }) {
   const fetchSalesData = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`http://localhost:3001/api/farmer/sales-report?range=${timeRange}`, {
-        headers: {
-          'Authorization': `Bearer ${auth.token}`
-        }
-      });
+  const API_URL = import.meta.env.DEV
+    ? "http://localhost:3001/api"
+    : "https://farmermarketproject.onrender.com/api";
+
+  const response = await fetch(`${API_URL}/farmer/sales-report?range=${timeRange}`, {
+    headers: {
+      'Authorization': `Bearer ${auth.token}`
+    }
+  });
+
 
       if (response.ok) {
         const data = await response.json();

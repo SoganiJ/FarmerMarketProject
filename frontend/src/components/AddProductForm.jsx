@@ -30,7 +30,7 @@ function AddProductForm({ onProductAdded }) {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const response = await fetch("https://farmermarketproject.onrender.com/api/categories");
+        const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/categories`);
         if (!response.ok) {
           throw new Error("Could not fetch categories.");
         }
@@ -50,15 +50,16 @@ function AddProductForm({ onProductAdded }) {
       if (formData.product_name && formData.district && formData.state && formData.crop_status) {
         setIsFetchingAdvice(true);
         try {
-          const token = localStorage.getItem("token");
-          const response = await fetch(
-            `http://localhost:3001/api/price-advice?crop_name=${encodeURIComponent(formData.product_name)}&district=${encodeURIComponent(formData.district)}&state=${encodeURIComponent(formData.state)}&crop_status=${encodeURIComponent(formData.crop_status)}`,
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            }
-          );
+  const token = localStorage.getItem("token");
+  const response = await fetch(
+    `${import.meta.env.VITE_API_BASE_URL}/api/price-advice?crop_name=${encodeURIComponent(formData.product_name)}&district=${encodeURIComponent(formData.district)}&state=${encodeURIComponent(formData.state)}&crop_status=${encodeURIComponent(formData.crop_status)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
 
           if (response.ok) {
             const advice = await response.json();
@@ -422,7 +423,7 @@ function AddProductForm({ onProductAdded }) {
       fd.append("category", formData.category);
       if (formData.image) fd.append("image", formData.image);
 
-      const response = await fetch("http://localhost:3001/api/products", {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/products`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,

@@ -101,9 +101,14 @@ function AuthForms({ onLoginSuccess }) {
     
     setIsLoading(true);
 
-    const url = isLogin
-      ? 'http://localhost:3001/api/login'
-      : 'http://localhost:3001/api/register';
+    const API_URL = import.meta.env.DEV
+  ? "http://localhost:3001/api"
+  : "https://farmermarketproject.onrender.com/api";
+
+const url = isLogin
+  ? `${API_URL}/login`
+  : `${API_URL}/register`;
+
 
     const body = isLogin
       ? { email: formData.email, password: formData.password }

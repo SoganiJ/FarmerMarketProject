@@ -34,14 +34,18 @@ function Cart({ cart, removeFromCart, updateCartQuantity, clearCart, auth, setVi
         shipping_address: shippingAddress
       };
 
-      const response = await fetch('http://localhost:3001/api/orders', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${auth.token}`
-        },
-        body: JSON.stringify(orderData)
-      });
+      const response = await fetch(
+  `${import.meta.env.VITE_API_BASE_URL}/api/orders`,
+  {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${auth.token}`
+    },
+    body: JSON.stringify(orderData)
+  }
+);
+
 
       const data = await response.json();
       console.log('Order API Response:', data); // Debug log

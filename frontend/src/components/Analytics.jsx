@@ -11,11 +11,14 @@ function Analytics({ auth }) {
   }, [period]);
 
   const fetchAnalytics = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch(`http://localhost:3001/api/farmer/analytics?period=${period}`, {
-        headers: { 'Authorization': `Bearer ${auth.token}` }
-      });
+  try {
+    setLoading(true);
+    const response = await fetch(
+      `${import.meta.env.VITE_API_BASE_URL}/api/farmer/analytics?period=${period}`,
+      {
+        headers: { Authorization: `Bearer ${auth.token}` }
+      }
+    );
 
       if (response.ok) {
         const data = await response.json();

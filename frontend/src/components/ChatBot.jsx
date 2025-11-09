@@ -32,19 +32,23 @@ function ChatBot({ auth, onClose }) {
     }, []);
 
     const loadChatHistory = async () => {
-        if (!auth.token) return;
-        try {
-            const response = await fetch('http://localhost:3001/api/chat/history', {
-                headers: { 'Authorization': `Bearer ${auth.token}` }
-            });
-            if (response.ok) {
-                const history = await response.json();
-                setMessages(history);
-            }
-        } catch (error) {
-            console.error('Error loading chat history:', error);
-        }
-    };
+  if (!auth.token) return;
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_API_BASE_URL}/api/chat/history`,
+      {
+        headers: { Authorization: `Bearer ${auth.token}` }
+      }
+    );
+    if (response.ok) {
+      const history = await response.json();
+      setMessages(history);
+    }
+  } catch (error) {
+    console.error('Error loading chat history:', error);
+  }
+};
+
 
     const sendMessage = async (messageText = inputMessage) => {
         if (!messageText.trim() || isLoading) return;
@@ -64,14 +68,18 @@ function ChatBot({ auth, onClose }) {
         setMessages(prev => [...prev, newUserMessage]);
 
         try {
-            const response = await fetch('http://localhost:3001/api/chat/send', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${auth.token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ message: userMessageText })
-            });
+  const response = await fetch(
+    `${import.meta.env.VITE_API_BASE_URL}/api/chat/send`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${auth.token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ message: userMessageText })
+    }
+  );
+
 
             const data = await response.json();
 
@@ -116,20 +124,24 @@ function ChatBot({ auth, onClose }) {
     };
 
     const clearChat = async () => {
-        if (!window.confirm('Are you sure you want to clear all chat history?')) return;
-        
-        try {
-            const response = await fetch('http://localhost:3001/api/chat/history', {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${auth.token}` }
-            });
-            if (response.ok) {
-                setMessages([]);
-            }
-        } catch (error) {
-            console.error('Error clearing chat:', error);
-        }
-    };
+  if (!window.confirm('Are you sure you want to clear all chat history?')) return;
+
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_API_BASE_URL}/api/chat/history`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${auth.token}` }
+      }
+    );
+
+    if (response.ok) {
+      setMessages([]);
+    }
+  } catch (error) {
+    console.error('Error clearing chat:', error);
+  }
+};
 
     const handleSuggestionClick = (question) => {
         sendMessage(question);

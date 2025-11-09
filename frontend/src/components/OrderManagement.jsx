@@ -7,15 +7,21 @@ function OrderManagement({ orders, onOrderUpdated, auth }) {
 
   const updateOrderStatus = async (orderId, newStatus) => {
     try {
-      setUpdatingOrder(orderId);
-      const response = await fetch(`http://localhost:3001/api/farmer/orders/${orderId}/status`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${auth.token}`
-        },
-        body: JSON.stringify({ status: newStatus })
-      });
+  setUpdatingOrder(orderId);
+
+  const API_URL = import.meta.env.DEV
+    ? "http://localhost:3001/api"
+    : "https://farmermarketproject.onrender.com/api";
+
+  const response = await fetch(`${API_URL}/farmer/orders/${orderId}/status`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${auth.token}`
+    },
+    body: JSON.stringify({ status: newStatus })
+  });
+
 
       if (response.ok) {
         onOrderUpdated();

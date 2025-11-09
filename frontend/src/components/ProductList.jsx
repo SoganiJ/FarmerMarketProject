@@ -39,7 +39,12 @@ function ProductList({ auth, categories, addToCart }) {
 
       console.log('Fetching products with params:', params.toString()); // Debug
 
-      const response = await fetch(`http://localhost:3001/api/products?${params}`);
+      const API_URL = import.meta.env.DEV
+  ? "http://localhost:3001/api"
+  : "https://farmermarketproject.onrender.com/api";
+
+const response = await fetch(`${API_URL}/products?${params}`);
+
 
       if (!response.ok) throw new Error("Failed to fetch products");
       const data = await response.json();
